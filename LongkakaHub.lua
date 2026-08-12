@@ -1,8 +1,8 @@
 --[[
     ==================================================
-    * LONGKAKA HUB - FULL OPERATIONAL EDITION [MERGED]
+    * LONGKAKA HUB - FULL OPERATIONAL EDITION [MERGED - v2]
     * Realkid UI Style & Interactive Checkboxes
-    * Added: AutoQuest (Auto Accept Quest) feature
+    * Improved: AutoQuest (uses comprehensive quest list + keyword NPC search)
     ==================================================
 ]]--
 
@@ -277,6 +277,28 @@ local function getModelCFrame(model)
     return nil
 end
 
+-- Comprehensive quest name list (common start-quest remote names)
+local candidateQuests = {
+    -- Sea 1
+    "BanditQuest", "MonkeyQuest", "PirateQuest", "DesertQuest", "SnowBanditQuest",
+    "MarineQuest", "PrisonerQuest", "ColosseumQuest", "MilitaryQuest", "FishmanQuest",
+    "SkyQuest",
+    -- Sea 2
+    "CitizenQuest", "MarineLieutenantQuest", "ZombieQuest", "SnowMountainQuest", "HotAndColdQuest",
+    "CursedShipQuest", "IceCastleQuest",
+    -- Sea 3
+    "PortTownQuest", "HydraQuest", "GreatTreeQuest", "FloatingTurtleQuest", "HauntedCastleQuest", "SeaOfTreatsQuest",
+    -- Other known
+    "TushitaQuest", "EliteHunter"
+}
+
+-- Keywords to match NPC names in workspace (from your Sea 1/2/3 mapping)
+local questKeywords = {
+    "bandit","monkey","pirate","desert","snow","marine","prison","colosseum","magma","military",
+    "fishman","fountain","citizen","rose","flower","zombie","snowmountain","hot","cold","cursed","ice",
+    "port","hydra","great","tree","floating","turtle","haunted","treats","tushita","yama","elite"
+}
+
 local function playerHasQuest()
     local ok, res = pcall(function()
         if ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CommF_") then
@@ -288,19 +310,30 @@ local function playerHasQuest()
     return res
 end
 
+local function tryStartQuestByName(qname)
+    local ok = false
+    pcall(function()
+        if ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CommF_") then
+            ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", qname)
+            ok = true
+        end
+    end)
+    return ok
+end
+
 local function tryStartKnownQuests()
-    -- Danh sách mặc định; thêm tên quest server cụ thể nếu biết
-    local candidateQuests = {
-        "BanditQuest", "PirateQuest", "SharkmanQuest", "BuggyQuest",
-        "ZombieQuest", "DesertQuest", "TushitaQuest", "EliteHunter"
-    }
     for _, q in ipairs(candidateQuests) do
-        local ok = pcall(function()
-            if ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CommF_") then
-                ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", q)
-            end
-        end)
-        if ok then
+        local ok = tryStartQuestByName(q)
+        if ok then return true end
+    end
+    return false
+end
+
+local function stringContainsAny(str, keywords)
+    if not str then return false end
+    local s = string.lower(str)
+    for _, kw in ipairs(keywords) do
+        if string.find(s, kw, 1, true) then
             return true
         end
     end
@@ -312,7 +345,8 @@ local function tryClickQuestNPC()
         if obj:IsA("ClickDetector") then
             local parent = obj.Parent
             local lname = (parent and parent.Name) and string.lower(parent.Name) or ""
-            if string.find(lname, "quest") or string.find(lname, "npc") or string.find(lname, "questgiver") then
+            -- exact or keyword match
+            if stringContainsAny(lname, questKeywords) or stringContainsAny(parent.Name, questKeywords) then
                 local cf = getModelCFrame(parent)
                 if cf and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                     pcall(function()
@@ -326,7 +360,7 @@ local function tryClickQuestNPC()
         if obj:IsA("ProximityPrompt") then
             local parent = obj.Parent
             local lname = (parent and parent.Name) and string.lower(parent.Name) or ""
-            if string.find(lname, "quest") or string.find(lname, "npc") or string.find(lname, "questgiver") then
+            if stringContainsAny(lname, questKeywords) then
                 local model = parent
                 local cf = getModelCFrame(model)
                 if cf and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
@@ -336,6 +370,13 @@ local function tryClickQuestNPC()
                             if pcall(function() obj:InputHoldBegin() end) then
                                 pcall(function() obj:InputHoldEnd() end)
                             end
+                        else
+                            -- Try to trigger via :PromptButtonHoldBegan if available (safe pcall)
+                            pcall(function()
+                                if obj.Trigger then
+                                    obj:Trigger() -- some prompts support Trigger
+                                end
+                            end)
                         end
                     end)
                     return true
@@ -422,10 +463,10 @@ task.spawn(function()
 
             -- Advanced Quests (Elite / Yama / Tushita)
             if _G.Config.AutoYama then
-                ReplicatedStorage.Remotes.CommF_:InvokeServer("EliteHunter", "GetQuest")
+                pcall(function() ReplicatedStorage.Remotes.CommF_:InvokeServer("EliteHunter", "GetQuest") end)
             end
             if _G.Config.AutoTushita then
-                ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", "TushitaQuest")
+                pcall(function() ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", "TushitaQuest") end)
             end
 
             -- AutoQuest: try accept/start quest if not active
